@@ -1,0 +1,17 @@
+# binaries
+/bin
+/dist
+
+# env
+.env
+!.env.example
+
+# logs
+*.log
+
+# coverage
+coverage.out
+.gocache/
+
+# IDE / OS
+.DS_Store

@@ -1,17 +1,17 @@
 package student
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"io"
 	"mime/multipart"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	attendanceModule "absensi-cn-api/internal/modules/attendance"
 	leaveModule "absensi-cn-api/internal/modules/leave"
+	"absensi-cn-api/pkg/storage"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -39,7 +39,7 @@ var (
 type Service struct {
 	db                *gorm.DB
 	attendanceService *attendanceModule.Service
-	uploadRootPath    string
+	photoUploader     *storage.PhotoUploader
 }
 
 type studentProfileRow struct {
@@ -87,16 +87,11 @@ type submissionRow struct {
 	UpdatedAt      time.Time
 }
 
-func NewService(db *gorm.DB, attendanceService *attendanceModule.Service) *Service {
-	workingDir, err := os.Getwd()
-	if err != nil {
-		workingDir = "."
-	}
-
+func NewService(db *gorm.DB, attendanceService *attendanceModule.Service, photoUploader *storage.PhotoUploader) *Service {
 	return &Service{
 		db:                db,
 		attendanceService: attendanceService,
-		uploadRootPath:    filepath.Join(workingDir, "storage", "uploads", "student-attendance"),
+		photoUploader:     photoUploader,
 	}
 }
 
@@ -155,13 +150,14 @@ func (s *Service) GetToday(userID string) (*StudentTodayResponse, error) {
 		return nil, err
 	}
 
-	canSubmit := record == nil || (record.PhotoURL == nil && record.CheckInAt == nil && record.Status == attendanceModule.StatusAlfa)
+	hasSubmittedToday := isSubmittedAttendanceRecord(record)
+	canSubmit := !hasSubmittedToday
 	message := "Absensi hari ini masih bisa dikirim."
 	if now.Before(studentMoment(now, rule.CheckInStart)) {
 		message = "Absensi dibuka pukul " + rule.CheckInStart + "."
 		canSubmit = false
 	}
-	if record != nil && !canSubmit {
+	if hasSubmittedToday && !canSubmit {
 		message = "Absensi hari ini sudah dikirim. Kamu bisa absen lagi besok."
 	}
 
@@ -175,7 +171,7 @@ func (s *Service) GetToday(userID string) (*StudentTodayResponse, error) {
 		Message:       message,
 	}
 
-	if record != nil {
+	if hasSubmittedToday && record != nil {
 		mapped, err := s.mapAttendanceRecord(*record)
 		if err != nil {
 			return nil, err
@@ -250,7 +246,7 @@ func (s *Service) SubmitDailyReport(userID, reportType, reason string, photo *mu
 	if err != nil {
 		return nil, err
 	}
-	if existing != nil && (existing.PhotoURL != nil || existing.CheckInAt != nil || existing.Status != attendanceModule.StatusAlfa) {
+	if isSubmittedAttendanceRecord(existing) {
 		return nil, ErrAlreadySubmittedToday
 	}
 
@@ -432,33 +428,14 @@ func (s *Service) querySubmissions(studentID string) ([]submissionRow, error) {
 }
 
 func (s *Service) storePhoto(photo *multipart.FileHeader, submittedAt time.Time) (string, string, error) {
-	extension := strings.ToLower(filepath.Ext(photo.Filename))
-	fileName := uuid.NewString() + extension
-	relativeDir := filepath.Join(submittedAt.Format("2006"), submittedAt.Format("01"), submittedAt.Format("02"))
-	absoluteDir := filepath.Join(s.uploadRootPath, relativeDir)
-
-	if err := os.MkdirAll(absoluteDir, 0o755); err != nil {
-		return "", "", fmt.Errorf("create student attendance upload directory: %w", err)
+	if s.photoUploader == nil {
+		return "", "", fmt.Errorf("photo uploader is not configured")
 	}
-
-	source, err := photo.Open()
+	photoURL, fileName, err := s.photoUploader.Store(context.Background(), photo, "student-attendance", submittedAt)
 	if err != nil {
-		return "", "", fmt.Errorf("open student attendance photo: %w", err)
+		return "", "", fmt.Errorf("store student attendance photo: %w", err)
 	}
-	defer source.Close()
-
-	absolutePath := filepath.Join(absoluteDir, fileName)
-	destination, err := os.Create(absolutePath)
-	if err != nil {
-		return "", "", fmt.Errorf("create student attendance photo file: %w", err)
-	}
-	defer destination.Close()
-
-	if _, err := io.Copy(destination, source); err != nil {
-		return "", "", fmt.Errorf("save student attendance photo: %w", err)
-	}
-
-	return filepath.ToSlash(filepath.Join("/uploads", "student-attendance", relativeDir, fileName)), fileName, nil
+	return photoURL, fileName, nil
 }
 
 func mapProfileRow(row studentProfileRow) StudentProfileResponse {
@@ -664,6 +641,13 @@ func determineAttendanceStatus(now time.Time, checkInStart, onTimeUntil, lateUnt
 		return attendanceModule.StatusTelat
 	}
 	return attendanceModule.StatusAlfa
+}
+
+func isSubmittedAttendanceRecord(record *attendanceModule.AttendanceRecord) bool {
+	if record == nil {
+		return false
+	}
+	return record.PhotoURL != nil || record.CheckInAt != nil || record.Status != attendanceModule.StatusAlfa
 }
 
 func buildAttendanceNote(reportType, reason string) string {

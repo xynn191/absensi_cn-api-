@@ -33,7 +33,10 @@ func New() (*App, error) {
 		return nil, err
 	}
 
-	engine := router.New(cfg, db)
+	engine, err := router.New(cfg, db)
+	if err != nil {
+		return nil, err
+	}
 
 	server := &http.Server{
 		Addr:              fmt.Sprintf(":%s", cfg.Port),

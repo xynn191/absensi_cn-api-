@@ -18,10 +18,12 @@ type Config struct {
 	AllowedOrigins []string
 	Database       DatabaseConfig
 	JWT            JWTConfig
+	Cloudinary     CloudinaryConfig
 }
 
 type DatabaseConfig struct {
 	Enabled  bool
+	DSN      string
 	Host     string
 	Port     string
 	Name     string
@@ -33,6 +35,13 @@ type DatabaseConfig struct {
 type JWTConfig struct {
 	Secret         string
 	ExpiresInHours int
+}
+
+type CloudinaryConfig struct {
+	CloudName    string
+	APIKey       string
+	APISecret    string
+	UploadFolder string
 }
 
 func (c *Config) GinMode() string {
@@ -60,7 +69,8 @@ func Load() (*Config, error) {
 		APIPrefix:      getEnv("API_PREFIX", "/api/v1"),
 		AllowedOrigins: splitCSV(getEnv("APP_ALLOWED_ORIGINS", "http://localhost:3000")),
 		Database: DatabaseConfig{
-			Enabled:  getEnvBool("DB_ENABLED", false),
+			Enabled:  getEnvBool("DB_ENABLED", firstEnv("DB_DSN", "DATABASE_URL", "MYSQL_URL") != ""),
+			DSN:      firstEnv("DB_DSN", "DATABASE_URL", "MYSQL_URL"),
 			Host:     getEnv("DB_HOST", "127.0.0.1"),
 			Port:     getEnv("DB_PORT", "3306"),
 			Name:     getEnv("DB_NAME", "absensi_cn"),
@@ -72,6 +82,12 @@ func Load() (*Config, error) {
 			Secret:         getEnv("JWT_SECRET", "development-secret"),
 			ExpiresInHours: getEnvInt("JWT_EXPIRES_IN_HOURS", 24),
 		},
+		Cloudinary: CloudinaryConfig{
+			CloudName:    getEnv("CLOUDINARY_CLOUD_NAME", ""),
+			APIKey:       getEnv("CLOUDINARY_API_KEY", ""),
+			APISecret:    getEnv("CLOUDINARY_API_SECRET", ""),
+			UploadFolder: getEnv("CLOUDINARY_UPLOAD_FOLDER", "absensi-cn"),
+		},
 	}
 
 	if cfg.JWT.Secret == "" {
@@ -82,7 +98,29 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("API_PREFIX must start with '/', got %q", cfg.APIPrefix)
 	}
 
+	if err := cfg.Cloudinary.Validate(); err != nil {
+		return nil, err
+	}
+
 	return cfg, nil
+}
+
+func (c CloudinaryConfig) Enabled() bool {
+	return c.CloudName != "" && c.APIKey != "" && c.APISecret != ""
+}
+
+func (c CloudinaryConfig) Validate() error {
+	values := []string{c.CloudName, c.APIKey, c.APISecret}
+	filled := 0
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			filled++
+		}
+	}
+	if filled > 0 && filled != len(values) {
+		return errors.New("cloudinary config requires CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET together")
+	}
+	return nil
 }
 
 func getEnv(key, fallback string) string {
@@ -92,6 +130,16 @@ func getEnv(key, fallback string) string {
 	}
 
 	return value
+}
+
+func firstEnv(keys ...string) string {
+	for _, key := range keys {
+		value := strings.TrimSpace(os.Getenv(key))
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func getEnvBool(key string, fallback bool) bool {

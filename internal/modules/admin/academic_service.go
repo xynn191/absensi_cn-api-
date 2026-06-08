@@ -61,15 +61,21 @@ type schoolYearRow struct {
 }
 
 type classRow struct {
-	ID             string
-	Grade          string
-	Name           string
-	MajorID        string
-	MajorCode      string
-	MajorName      string
-	SchoolYearID   string
-	SchoolYearName string
-	IsActive       bool
+	ID                     string
+	Grade                  string
+	Name                   string
+	MajorID                string
+	MajorCode              string
+	MajorName              string
+	SchoolYearID           string
+	SchoolYearName         string
+	StudentCount           int
+	SubjectAssignmentCount int
+	HomeroomAssignmentID    *string
+	HomeroomTeacherID       *string
+	HomeroomTeacherName     *string
+	AttendanceRecordCount  int
+	IsActive               bool
 }
 
 type teacherSubjectAssignmentRow struct {
@@ -1094,9 +1100,31 @@ func (s *Service) findHomeroomAssignmentByID(id string) (*academic.HomeroomAssig
 func (s *Service) queryClasses() ([]classRow, error) {
 	var rows []classRow
 	if err := s.db.Table("classes").
-		Select("classes.id, classes.grade, classes.name, classes.major_id, majors.code as major_code, majors.name as major_name, classes.school_year_id, school_years.name as school_year_name, classes.is_active").
+		Select(`
+			classes.id,
+			classes.grade,
+			classes.name,
+			classes.major_id,
+			majors.code as major_code,
+			majors.name as major_name,
+			classes.school_year_id,
+			school_years.name as school_year_name,
+			coalesce(student_counts.student_count, 0) as student_count,
+			coalesce(subject_counts.subject_assignment_count, 0) as subject_assignment_count,
+			ha.id as homeroom_assignment_id,
+			ha.teacher_id as homeroom_teacher_id,
+			homeroom_user.name as homeroom_teacher_name,
+			coalesce(attendance_counts.attendance_record_count, 0) as attendance_record_count,
+			classes.is_active
+		`).
 		Joins("join majors on majors.id = classes.major_id").
 		Joins("join school_years on school_years.id = classes.school_year_id").
+		Joins("left join (select class_id, count(*) as student_count from student_class_memberships where is_active = true group by class_id) as student_counts on student_counts.class_id = classes.id").
+		Joins("left join (select class_id, count(*) as subject_assignment_count from teacher_subject_assignments where is_active = true group by class_id) as subject_counts on subject_counts.class_id = classes.id").
+		Joins("left join homeroom_assignments as ha on ha.class_id = classes.id and ha.school_year_id = classes.school_year_id and ha.is_active = true").
+		Joins("left join teachers as homeroom_teacher on homeroom_teacher.id = ha.teacher_id").
+		Joins("left join users as homeroom_user on homeroom_user.id = homeroom_teacher.user_id").
+		Joins("left join (select class_id, count(*) as attendance_record_count from attendance_records group by class_id) as attendance_counts on attendance_counts.class_id = classes.id").
 		Order("school_years.start_year desc, classes.grade asc, majors.code asc, classes.name asc").
 		Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("list classes: %w", err)
@@ -1247,16 +1275,22 @@ func mapClasses(rows []classRow) []ClassResponse {
 func mapClassRow(row classRow) ClassResponse {
 	displayName := strings.TrimSpace(fmt.Sprintf("%s %s %s", row.Grade, row.MajorCode, row.Name))
 	return ClassResponse{
-		ID:             row.ID,
-		Grade:          row.Grade,
-		Name:           row.Name,
-		MajorID:        row.MajorID,
-		MajorCode:      row.MajorCode,
-		MajorName:      row.MajorName,
-		SchoolYearID:   row.SchoolYearID,
-		SchoolYearName: row.SchoolYearName,
-		DisplayName:    displayName,
-		IsActive:       row.IsActive,
+		ID:                     row.ID,
+		Grade:                  row.Grade,
+		Name:                   row.Name,
+		MajorID:                row.MajorID,
+		MajorCode:              row.MajorCode,
+		MajorName:              row.MajorName,
+		SchoolYearID:           row.SchoolYearID,
+		SchoolYearName:         row.SchoolYearName,
+		DisplayName:            displayName,
+		StudentCount:           row.StudentCount,
+		SubjectAssignmentCount: row.SubjectAssignmentCount,
+		HomeroomAssignmentID:    dereference(row.HomeroomAssignmentID),
+		HomeroomTeacherID:       dereference(row.HomeroomTeacherID),
+		HomeroomTeacherName:     dereference(row.HomeroomTeacherName),
+		AttendanceRecordCount:  row.AttendanceRecordCount,
+		IsActive:               row.IsActive,
 	}
 }
 

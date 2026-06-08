@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"net"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -62,8 +64,10 @@ func NewMySQL(cfg *config.Config) (*gorm.DB, error) {
 		return nil, nil
 	}
 
-	if err := ensureDatabaseExists(cfg); err != nil {
-		return nil, err
+	if cfg.Database.DSN == "" {
+		if err := ensureDatabaseExists(cfg); err != nil {
+			return nil, err
+		}
 	}
 
 	dsn := buildDatabaseDSN(cfg)
@@ -171,7 +175,7 @@ func seedInitialData(db *gorm.DB) error {
 	}{
 		{
 			ID:       uuid.NewString(),
-			Name:     "Rafi Akbar",
+			Name:     "Sabrina",
 			Role:     user.RoleStudent,
 			NIS:      stringPtr("1234567890"),
 			Username: stringPtr("siswa"),
@@ -287,7 +291,7 @@ func seedInitialData(db *gorm.DB) error {
 
 	defaultStudents := []seedStudentData{
 		{
-			Name:        "Rafi Akbar",
+			Name:        "Sabrina",
 			NIS:         "1234567890",
 			NISN:        "998877660001",
 			Password:    "121212",
@@ -296,7 +300,7 @@ func seedInitialData(db *gorm.DB) error {
 			BirthDate:   "2010-01-15",
 			Address:     "Jl. Pendidikan No. 1",
 			Phone:       "081300000001",
-			ParentName:  "Bapak Akbar",
+			ParentName:  "adaa",
 			ParentPhone: "081311111111",
 			EntryYear:   2026,
 			ClassKey:    "X-PPLG-1",
@@ -445,8 +449,10 @@ func seedInitialData(db *gorm.DB) error {
 		return err
 	}
 
-	if err := seedSupportCaseData(db); err != nil {
-		return err
+	if os.Getenv("APP_ENV") != "production" {
+		if err := seedSupportCaseData(db); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -1046,20 +1052,20 @@ func seedSupportCaseData(db *gorm.DB) error {
 	yesterday := today.AddDate(0, 0, -1)
 	twoDaysAgo := today.AddDate(0, 0, -2)
 
-	if err := ensureSeedStudentAttendance(db, studentDemo.ID, today, attendanceModule.StatusHadir, timePtr(time.Date(today.Year(), today.Month(), today.Day(), 6, 42, 0, 0, location)), stringPtr("Hadir tepat waktu")); err != nil {
+	if err := ensureSeedStudentAttendance(db, studentDemo.ID, today, attendanceModule.StatusAlfa, nil, stringPtr("Belum melakukan check-in")); err != nil {
 		return err
 	}
-	if err := ensureSeedStudentAttendance(db, studentDemo.ID, yesterday, attendanceModule.StatusTelat, timePtr(time.Date(yesterday.Year(), yesterday.Month(), yesterday.Day(), 7, 11, 0, 0, location)), stringPtr("Datang melewati batas hadir")); err != nil {
+	if err := ensureSeedStudentAttendance(db, studentDemo.ID, yesterday, attendanceModule.StatusHadir, timePtr(time.Date(yesterday.Year(), yesterday.Month(), yesterday.Day(), 6, 42, 0, 0, location)), stringPtr("Hadir tepat waktu")); err != nil {
 		return err
 	}
-	if err := ensureSeedStudentAttendance(db, studentDemo.ID, twoDaysAgo, attendanceModule.StatusHadir, timePtr(time.Date(twoDaysAgo.Year(), twoDaysAgo.Month(), twoDaysAgo.Day(), 6, 48, 0, 0, location)), stringPtr("Check-in normal")); err != nil {
+	if err := ensureSeedStudentAttendance(db, studentDemo.ID, twoDaysAgo, attendanceModule.StatusTelat, timePtr(time.Date(twoDaysAgo.Year(), twoDaysAgo.Month(), twoDaysAgo.Day(), 7, 11, 0, 0, location)), stringPtr("Datang melewati batas hadir")); err != nil {
 		return err
 	}
 
-	if err := ensureSeedStudentAttendance(db, studentSalsa.ID, today, attendanceModule.StatusTelat, timePtr(time.Date(today.Year(), today.Month(), today.Day(), 7, 14, 0, 0, location)), stringPtr("Masuk setelah jam 07.00")); err != nil {
+	if err := ensureSeedStudentAttendance(db, studentSalsa.ID, today, attendanceModule.StatusAlfa, nil, stringPtr("Belum melakukan check-in")); err != nil {
 		return err
 	}
-	if err := ensureSeedStudentAttendance(db, studentSalsa.ID, yesterday, attendanceModule.StatusHadir, timePtr(time.Date(yesterday.Year(), yesterday.Month(), yesterday.Day(), 6, 39, 0, 0, location)), stringPtr("Datang lebih awal")); err != nil {
+	if err := ensureSeedStudentAttendance(db, studentSalsa.ID, yesterday, attendanceModule.StatusTelat, timePtr(time.Date(yesterday.Year(), yesterday.Month(), yesterday.Day(), 7, 14, 0, 0, location)), stringPtr("Masuk setelah jam 07.00")); err != nil {
 		return err
 	}
 
@@ -1279,6 +1285,10 @@ func migrateLegacyClassrooms(db *gorm.DB) error {
 }
 
 func buildServerDSN(cfg *config.Config) string {
+	if cfg.Database.DSN != "" {
+		return buildDatabaseDSN(cfg)
+	}
+
 	return fmt.Sprintf(
 		"%s:%s@tcp(%s:%s)/?%s",
 		cfg.Database.User,
@@ -1290,6 +1300,10 @@ func buildServerDSN(cfg *config.Config) string {
 }
 
 func buildDatabaseDSN(cfg *config.Config) string {
+	if cfg.Database.DSN != "" {
+		return normalizeMySQLDSN(cfg.Database.DSN, cfg.Database.Params)
+	}
+
 	return fmt.Sprintf(
 		"%s:%s@tcp(%s:%s)/%s?%s",
 		cfg.Database.User,
@@ -1299,6 +1313,52 @@ func buildDatabaseDSN(cfg *config.Config) string {
 		cfg.Database.Name,
 		cfg.Database.Params,
 	)
+}
+
+func normalizeMySQLDSN(rawDSN, defaultParams string) string {
+	trimmed := strings.TrimSpace(rawDSN)
+	if trimmed == "" {
+		return trimmed
+	}
+
+	parsed, err := url.Parse(trimmed)
+	if err != nil || parsed.Scheme == "" {
+		return trimmed
+	}
+	if parsed.Scheme != "mysql" && parsed.Scheme != "mysql2" {
+		return trimmed
+	}
+
+	username := parsed.User.Username()
+	password, _ := parsed.User.Password()
+	host := parsed.Host
+	if !strings.Contains(host, ":") {
+		host = net.JoinHostPort(host, "3306")
+	}
+
+	databaseName := strings.TrimPrefix(parsed.Path, "/")
+	params := parsed.Query()
+	if defaultParams != "" {
+		defaultValues, err := url.ParseQuery(defaultParams)
+		if err == nil {
+			for key, values := range defaultValues {
+				if _, exists := params[key]; !exists {
+					params[key] = values
+				}
+			}
+		}
+	}
+	if _, exists := params["charset"]; !exists {
+		params.Set("charset", "utf8mb4")
+	}
+	if _, exists := params["parseTime"]; !exists {
+		params.Set("parseTime", "True")
+	}
+	if _, exists := params["loc"]; !exists {
+		params.Set("loc", "Local")
+	}
+
+	return fmt.Sprintf("%s:%s@tcp(%s)/%s?%s", username, password, host, databaseName, params.Encode())
 }
 
 func stringPtr(value string) *string {

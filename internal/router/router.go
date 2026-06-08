@@ -7,17 +7,23 @@ import (
 	"absensi-cn-api/internal/modules/attendance"
 	"absensi-cn-api/internal/modules/auth"
 	"absensi-cn-api/internal/modules/health"
+	publicPortal "absensi-cn-api/internal/modules/public"
 	"absensi-cn-api/internal/modules/staff"
 	studentPortal "absensi-cn-api/internal/modules/student"
 	"absensi-cn-api/internal/modules/user"
+	"absensi-cn-api/pkg/storage"
 	"absensi-cn-api/pkg/token"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
-func New(cfg *config.Config, db *gorm.DB) *gin.Engine {
+func New(cfg *config.Config, db *gorm.DB) (*gin.Engine, error) {
 	gin.SetMode(cfg.GinMode())
 
 	engine := gin.New()
@@ -26,6 +32,7 @@ func New(cfg *config.Config, db *gorm.DB) *gin.Engine {
 	engine.Use(middleware.RequestID())
 	engine.Use(cors.New(cors.Config{
 		AllowOrigins:     cfg.AllowedOrigins,
+		AllowWildcard:    hasWildcardOrigin(cfg.AllowedOrigins),
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Request-ID"},
 		ExposeHeaders:    []string{"X-Request-ID"},
@@ -34,18 +41,34 @@ func New(cfg *config.Config, db *gorm.DB) *gin.Engine {
 	engine.Static("/uploads", "./storage/uploads")
 
 	jwtManager := token.NewJWTManager(cfg.JWT.Secret, cfg.JWT.ExpiresInHours)
+	workingDir, err := os.Getwd()
+	if err != nil {
+		workingDir = "."
+	}
+	photoUploader, err := storage.NewPhotoUploader(storage.PhotoUploaderConfig{
+		CloudName:    cfg.Cloudinary.CloudName,
+		APIKey:       cfg.Cloudinary.APIKey,
+		APISecret:    cfg.Cloudinary.APISecret,
+		UploadFolder: cfg.Cloudinary.UploadFolder,
+		LocalRoot:    filepath.Join(workingDir, "storage", "uploads"),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("initialize photo uploader: %w", err)
+	}
 
 	healthHandler := health.NewHandler(db)
+	publicHandler := publicPortal.NewHandler(publicPortal.NewService(db))
 	authHandler := auth.NewHandler(auth.NewService(jwtManager, db))
-	attendanceService := attendance.NewService(db)
+	attendanceService := attendance.NewService(db, photoUploader)
 	attendanceHandler := attendance.NewHandler(attendanceService)
 	adminHandler := admin.NewHandler(admin.NewService(db, attendanceService))
 	staffHandler := staff.NewHandler(staff.NewService(db, attendanceService))
-	studentHandler := studentPortal.NewHandler(studentPortal.NewService(db, attendanceService))
+	studentHandler := studentPortal.NewHandler(studentPortal.NewService(db, attendanceService, photoUploader))
 
 	api := engine.Group(cfg.APIPrefix)
 	{
 		api.GET("/health", healthHandler.Check)
+		api.GET("/public/attendance-window", publicHandler.AttendanceWindow)
 		api.POST("/auth/login", authHandler.Login)
 
 		attendanceGroup := api.Group("/attendance")
@@ -172,5 +195,14 @@ func New(cfg *config.Config, db *gorm.DB) *gin.Engine {
 		}
 	}
 
-	return engine
+	return engine, nil
+}
+
+func hasWildcardOrigin(origins []string) bool {
+	for _, origin := range origins {
+		if strings.Contains(origin, "*") {
+			return true
+		}
+	}
+	return false
 }

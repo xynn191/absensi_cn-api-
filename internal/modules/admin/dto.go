@@ -139,16 +139,22 @@ type UpsertSchoolYearRequest struct {
 }
 
 type ClassResponse struct {
-	ID             string `json:"id"`
-	Grade          string `json:"grade"`
-	Name           string `json:"name"`
-	MajorID        string `json:"major_id"`
-	MajorCode      string `json:"major_code"`
-	MajorName      string `json:"major_name"`
-	SchoolYearID   string `json:"school_year_id"`
-	SchoolYearName string `json:"school_year_name"`
-	DisplayName    string `json:"display_name"`
-	IsActive       bool   `json:"is_active"`
+	ID                     string `json:"id"`
+	Grade                  string `json:"grade"`
+	Name                   string `json:"name"`
+	MajorID                string `json:"major_id"`
+	MajorCode              string `json:"major_code"`
+	MajorName              string `json:"major_name"`
+	SchoolYearID           string `json:"school_year_id"`
+	SchoolYearName         string `json:"school_year_name"`
+	DisplayName            string `json:"display_name"`
+	StudentCount           int    `json:"student_count"`
+	SubjectAssignmentCount int    `json:"subject_assignment_count"`
+	HomeroomAssignmentID    string `json:"homeroom_assignment_id,omitempty"`
+	HomeroomTeacherID       string `json:"homeroom_teacher_id,omitempty"`
+	HomeroomTeacherName     string `json:"homeroom_teacher_name,omitempty"`
+	AttendanceRecordCount  int    `json:"attendance_record_count"`
+	IsActive               bool   `json:"is_active"`
 }
 
 type UpsertClassRequest struct {

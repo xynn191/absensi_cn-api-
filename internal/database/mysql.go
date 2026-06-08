@@ -23,6 +23,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 )
 
@@ -110,9 +111,15 @@ func NewMySQL(cfg *config.Config) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	if err := seedInitialData(db); err != nil {
+if os.Getenv("ENABLE_ADMIN_SEED") == "true" {
+	slog.Info("admin seed enabled")
+
+	if err := seedAdminOnly(db); err != nil {
 		return nil, err
 	}
+} else {
+	slog.Info("admin seed skipped")
+}
 
 	return db, nil
 }
@@ -159,6 +166,22 @@ func autoMigrate(db *gorm.DB) error {
 		&counseling.Note{},
 	); err != nil {
 		return fmt.Errorf("auto migrate schema: %w", err)
+	}
+
+	return nil
+}
+
+func seedAdminOnly(db *gorm.DB) error {
+	_, err := ensureSeedUser(
+		db,
+		"Administrator",
+		user.RoleAdmin,
+		nil,
+		stringPtr("admin"),
+		"121212",
+	)
+	if err != nil {
+		return fmt.Errorf("seed admin user: %w", err)
 	}
 
 	return nil
@@ -1149,7 +1172,9 @@ func ensureSeedStudentAttendance(
 	targetDate := time.Date(attendanceDate.Year(), attendanceDate.Month(), attendanceDate.Day(), 0, 0, 0, 0, attendanceDate.Location())
 
 	var existing attendanceModule.AttendanceRecord
-	err := db.Where("student_id = ? AND attendance_date = ?", studentID, targetDate).First(&existing).Error
+	err := db.
+		Where("student_id = ? AND DATE(attendance_date) = ?", studentID, targetDate.Format("2006-01-02")).
+		First(&existing).Error
 	if err == nil {
 		existing.StudentClassMembershipID = membership.ID
 		existing.ClassID = membership.ClassID
@@ -1177,7 +1202,20 @@ func ensureSeedStudentAttendance(
 		Status:                   status,
 		Notes:                    notes,
 	}
-	if err := db.Create(&record).Error; err != nil {
+	if err := db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "student_id"},
+			{Name: "attendance_date"},
+		},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"student_class_membership_id",
+			"class_id",
+			"school_year_id",
+			"check_in_at",
+			"status",
+			"notes",
+		}),
+	}).Create(&record).Error; err != nil {
 		return fmt.Errorf("create seed attendance record for student %s: %w", studentID, err)
 	}
 

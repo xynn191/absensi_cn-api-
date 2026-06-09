@@ -112,13 +112,13 @@ func NewMySQL(cfg *config.Config) (*gorm.DB, error) {
 	}
 
 if os.Getenv("ENABLE_ADMIN_SEED") == "true" {
-	slog.Info("admin seed enabled")
+	slog.Info("minimal seed enabled")
 
-	if err := seedAdminOnly(db); err != nil {
-		return nil, err
-	}
+if err := seedMinimalData(db); err != nil {
+	return nil, err
+}
 } else {
-	slog.Info("admin seed skipped")
+	slog.Info("minimal seed skipped")
 }
 
 	return db, nil
@@ -171,7 +171,7 @@ func autoMigrate(db *gorm.DB) error {
 	return nil
 }
 
-func seedAdminOnly(db *gorm.DB) error {
+func seedMinimalData(db *gorm.DB) error {
 	_, err := ensureSeedUser(
 		db,
 		"Administrator",
@@ -182,6 +182,10 @@ func seedAdminOnly(db *gorm.DB) error {
 	)
 	if err != nil {
 		return fmt.Errorf("seed admin user: %w", err)
+	}
+
+	if _, err := ensureSeedSchoolYear(db, "2026/2027", 2026, 2027, true); err != nil {
+		return fmt.Errorf("seed school year: %w", err)
 	}
 
 	return nil

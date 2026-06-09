@@ -188,6 +188,24 @@ func seedMinimalData(db *gorm.DB) error {
 		return fmt.Errorf("seed school year: %w", err)
 	}
 
+	majors := []struct {
+		Code string
+		Name string
+	}{
+		{Code: "PPLG", Name: "Pengembangan Perangkat Lunak dan Gim"},
+		{Code: "TJKT", Name: "Teknik Jaringan Komputer dan Telekomunikasi"},
+		{Code: "DKV", Name: "Desain Komunikasi Visual"},
+		{Code: "MPLB", Name: "Manajemen Perkantoran dan Layanan Bisnis"},
+		{Code: "PM", Name: "Pemasaran"},
+		{Code: "PH", Name: "Perhotelan"},
+	}
+
+	for _, item := range majors {
+		if _, err := ensureSeedMajor(db, item.Code, item.Name, true); err != nil {
+			return fmt.Errorf("seed major %s: %w", item.Code, err)
+		}
+	}
+
 	return nil
 }
 

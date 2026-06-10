@@ -305,9 +305,10 @@ func (s *Service) SubmitDailyReport(userID, reportType, reason string, photo *mu
 					return fmt.Errorf("create student attendance report: %w", err)
 				}
 				// A concurrent alpha-sync inserted a placeholder between our pre-check
-				// and this insert. Fetch it and overwrite with the real submission.
+				// and this insert. Fetch it outside the transaction — REPEATABLE READ
+				// isolation prevents tx from seeing rows inserted by other transactions.
 				var conflict attendanceModule.AttendanceRecord
-				if fetchErr := tx.Where("student_id = ? AND attendance_date = ?",
+				if fetchErr := s.db.Where("student_id = ? AND attendance_date = ?",
 					row.StudentID,
 					attendanceDateOnly(now).Format("2006-01-02"),
 				).First(&conflict).Error; fetchErr != nil {

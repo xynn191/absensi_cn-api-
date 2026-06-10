@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+"gorm.io/gorm/clause"
 )
 
 const (
@@ -571,9 +572,15 @@ func (s *Service) ensureAlphaRecordsForDate(date time.Time) error {
 			AttendanceDate:           targetDate,
 			Status:                   StatusAlfa,
 		}
-		if err := s.db.Create(&record).Error; err != nil {
-			return fmt.Errorf("create alpha attendance record: %w", err)
-		}
+		if err := s.db.Clauses(clause.OnConflict{
+	Columns: []clause.Column{
+		{Name: "student_id"},
+		{Name: "attendance_date"},
+	},
+	DoNothing: true,
+}).Create(&record).Error; err != nil {
+	return fmt.Errorf("create alpha attendance record: %w", err)
+}
 	}
 
 	return nil

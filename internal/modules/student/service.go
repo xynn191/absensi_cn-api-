@@ -13,9 +13,9 @@ import (
 	leaveModule "absensi-cn-api/internal/modules/leave"
 	"absensi-cn-api/pkg/storage"
 
-	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -270,22 +270,41 @@ func (s *Service) SubmitDailyReport(userID, reportType, reason string, photo *mu
 			checkInAt = nil
 		}
 
-		if existing != nil {
-			existing.StudentClassMembershipID = row.MembershipID
-			existing.ClassID = row.ClassID
-			existing.SchoolYearID = row.SchoolYearID
-			existing.Status = status
-			existing.CheckInAt = checkInAt
-			existing.PhotoURL = stringPtr(photoURL)
-			existing.PhotoFilename = stringPtr(photoFilename)
-			existing.Notes = optionalString(buildAttendanceNote(normalizedType, trimmedReason))
-			existing.VerifiedBy = nil
-			existing.VerifiedAt = nil
-			existing.VerificationNote = nil
-			if err := tx.Save(existing).Error; err != nil {
-				return fmt.Errorf("update student attendance report: %w", err)
+		// SELECT FOR UPDATE: forces a "current read" even inside REPEATABLE READ,
+		// and acquires a gap lock when no row exists — preventing concurrent inserts.
+		var target attendanceModule.AttendanceRecord
+		lockErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("student_id = ? AND attendance_date = ?",
+				row.StudentID,
+				attendanceDateOnly(now).Format("2006-01-02"),
+			).First(&target).Error
+
+		if lockErr != nil && !errors.Is(lockErr, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("lock attendance slot: %w", lockErr)
+		}
+
+		if lockErr == nil {
+			// Row exists — check if already a real submission.
+			if isSubmittedAttendanceRecord(&target) {
+				return ErrAlreadySubmittedToday
+			}
+			// Alpha placeholder — overwrite with real submission.
+			target.StudentClassMembershipID = row.MembershipID
+			target.ClassID = row.ClassID
+			target.SchoolYearID = row.SchoolYearID
+			target.Status = status
+			target.CheckInAt = checkInAt
+			target.PhotoURL = stringPtr(photoURL)
+			target.PhotoFilename = stringPtr(photoFilename)
+			target.Notes = optionalString(buildAttendanceNote(normalizedType, trimmedReason))
+			target.VerifiedBy = nil
+			target.VerifiedAt = nil
+			target.VerificationNote = nil
+			if err := tx.Save(&target).Error; err != nil {
+				return fmt.Errorf("update attendance record: %w", err)
 			}
 		} else {
+			// No row exists — gap lock prevents concurrent inserts, safe to create.
 			record := attendanceModule.AttendanceRecord{
 				ID:                       uuid.NewString(),
 				StudentID:                row.StudentID,
@@ -300,37 +319,7 @@ func (s *Service) SubmitDailyReport(userID, reportType, reason string, photo *mu
 				Notes:                    optionalString(buildAttendanceNote(normalizedType, trimmedReason)),
 			}
 			if err := tx.Create(&record).Error; err != nil {
-				var mysqlErr *mysql.MySQLError
-				if !errors.As(err, &mysqlErr) || mysqlErr.Number != 1062 {
-					return fmt.Errorf("create student attendance report: %w", err)
-				}
-				// A concurrent alpha-sync inserted a placeholder between our pre-check
-				// and this insert. Fetch it outside the transaction — REPEATABLE READ
-				// isolation prevents tx from seeing rows inserted by other transactions.
-				var conflict attendanceModule.AttendanceRecord
-				if fetchErr := s.db.Where("student_id = ? AND attendance_date = ?",
-					row.StudentID,
-					attendanceDateOnly(now).Format("2006-01-02"),
-				).First(&conflict).Error; fetchErr != nil {
-					return fmt.Errorf("fetch conflicting attendance record: %w", fetchErr)
-				}
-				if isSubmittedAttendanceRecord(&conflict) {
-					return ErrAlreadySubmittedToday
-				}
-				conflict.StudentClassMembershipID = row.MembershipID
-				conflict.ClassID = row.ClassID
-				conflict.SchoolYearID = row.SchoolYearID
-				conflict.Status = status
-				conflict.CheckInAt = checkInAt
-				conflict.PhotoURL = stringPtr(photoURL)
-				conflict.PhotoFilename = stringPtr(photoFilename)
-				conflict.Notes = optionalString(buildAttendanceNote(normalizedType, trimmedReason))
-				conflict.VerifiedBy = nil
-				conflict.VerifiedAt = nil
-				conflict.VerificationNote = nil
-				if updateErr := tx.Save(&conflict).Error; updateErr != nil {
-					return fmt.Errorf("update conflicting attendance record: %w", updateErr)
-				}
+				return fmt.Errorf("create attendance record: %w", err)
 			}
 		}
 

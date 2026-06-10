@@ -35,8 +35,6 @@ var (
 	ErrPhotoInvalid           = errors.New("attendance photo must be jpg, jpeg, png, or webp")
 	ErrReportTypeInvalid      = errors.New("report type must be HADIR, IZIN, or SAKIT")
 	ErrReasonRequired         = errors.New("reason is required for izin or sakit")
-
-	errStudentAttendanceDuplicate = errors.New("concurrent duplicate attendance insert")
 )
 
 type Service struct {
@@ -303,10 +301,35 @@ func (s *Service) SubmitDailyReport(userID, reportType, reason string, photo *mu
 			}
 			if err := tx.Create(&record).Error; err != nil {
 				var mysqlErr *mysql.MySQLError
-				if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
-					return errStudentAttendanceDuplicate
+				if !errors.As(err, &mysqlErr) || mysqlErr.Number != 1062 {
+					return fmt.Errorf("create student attendance report: %w", err)
 				}
-				return fmt.Errorf("create student attendance report: %w", err)
+				// A concurrent alpha-sync inserted a placeholder between our pre-check
+				// and this insert. Fetch it and overwrite with the real submission.
+				var conflict attendanceModule.AttendanceRecord
+				if fetchErr := tx.Where("student_id = ? AND attendance_date = ?",
+					row.StudentID,
+					attendanceDateOnly(now).Format("2006-01-02"),
+				).First(&conflict).Error; fetchErr != nil {
+					return fmt.Errorf("fetch conflicting attendance record: %w", fetchErr)
+				}
+				if isSubmittedAttendanceRecord(&conflict) {
+					return ErrAlreadySubmittedToday
+				}
+				conflict.StudentClassMembershipID = row.MembershipID
+				conflict.ClassID = row.ClassID
+				conflict.SchoolYearID = row.SchoolYearID
+				conflict.Status = status
+				conflict.CheckInAt = checkInAt
+				conflict.PhotoURL = stringPtr(photoURL)
+				conflict.PhotoFilename = stringPtr(photoFilename)
+				conflict.Notes = optionalString(buildAttendanceNote(normalizedType, trimmedReason))
+				conflict.VerifiedBy = nil
+				conflict.VerifiedAt = nil
+				conflict.VerificationNote = nil
+				if updateErr := tx.Save(&conflict).Error; updateErr != nil {
+					return fmt.Errorf("update conflicting attendance record: %w", updateErr)
+				}
 			}
 		}
 
@@ -326,9 +349,6 @@ func (s *Service) SubmitDailyReport(userID, reportType, reason string, photo *mu
 
 		return nil
 	})
-	if errors.Is(err, errStudentAttendanceDuplicate) {
-		return s.GetToday(userID)
-	}
 	if err != nil {
 		return nil, err
 	}

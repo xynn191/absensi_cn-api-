@@ -1198,6 +1198,10 @@ func ensureSeedStudentAttendance(
 		Where("student_id = ? AND DATE(attendance_date) = ?", studentID, targetDate.Format("2006-01-02")).
 		First(&existing).Error
 	if err == nil {
+		// Never overwrite a genuine student submission (has photo or check-in time).
+		if existing.PhotoURL != nil || existing.CheckInAt != nil || existing.Status != attendanceModule.StatusAlfa {
+			return nil
+		}
 		existing.StudentClassMembershipID = membership.ID
 		existing.ClassID = membership.ClassID
 		existing.SchoolYearID = membership.SchoolYearID

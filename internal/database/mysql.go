@@ -1191,7 +1191,7 @@ func ensureSeedStudentAttendance(
 		return fmt.Errorf("find active membership for seeded attendance student %s: %w", studentID, err)
 	}
 
-	targetDate := time.Date(attendanceDate.Year(), attendanceDate.Month(), attendanceDate.Day(), 0, 0, 0, 0, attendanceDate.Location())
+	targetDate := time.Date(attendanceDate.Year(), attendanceDate.Month(), attendanceDate.Day(), 0, 0, 0, 0, time.UTC)
 
 	var existing attendanceModule.AttendanceRecord
 	err := db.

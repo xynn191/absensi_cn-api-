@@ -694,7 +694,9 @@ func studentMoment(base time.Time, clockValue string) time.Time {
 
 func attendanceDateOnly(value time.Time) time.Time {
 	current := value.In(studentLocation())
-	return time.Date(current.Year(), current.Month(), current.Day(), 0, 0, 0, 0, studentLocation())
+	// Store as UTC midnight so the MySQL DATE value matches the Jakarta calendar date
+	// regardless of the database connection's loc setting.
+	return time.Date(current.Year(), current.Month(), current.Day(), 0, 0, 0, 0, time.UTC)
 }
 
 func currentStudentTime() time.Time {

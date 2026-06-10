@@ -35,6 +35,7 @@ var (
 	ErrPhotoInvalid           = errors.New("attendance photo must be jpg, jpeg, png, or webp")
 	ErrReportTypeInvalid      = errors.New("report type must be HADIR, IZIN, or SAKIT")
 	ErrReasonRequired         = errors.New("reason is required for izin or sakit")
+	ErrAttendanceWindowClosed = errors.New("attendance window has closed for today")
 )
 
 type Service struct {
@@ -152,13 +153,15 @@ func (s *Service) GetToday(userID string) (*StudentTodayResponse, error) {
 	}
 
 	hasSubmittedToday := isSubmittedAttendanceRecord(record)
-	canSubmit := !hasSubmittedToday
+	windowClosed := now.After(studentMoment(now, rule.LateUntil))
+	canSubmit := !hasSubmittedToday && !windowClosed
 	message := "Absensi hari ini masih bisa dikirim."
 	if now.Before(studentMoment(now, rule.CheckInStart)) {
 		message = "Absensi dibuka pukul " + rule.CheckInStart + "."
 		canSubmit = false
-	}
-	if hasSubmittedToday && !canSubmit {
+	} else if !hasSubmittedToday && windowClosed {
+		message = "Batas waktu absensi sudah lewat. Kamu tercatat tidak hadir hari ini."
+	} else if hasSubmittedToday {
 		message = "Absensi hari ini sudah dikirim. Kamu bisa absen lagi besok."
 	}
 
@@ -241,6 +244,9 @@ func (s *Service) SubmitDailyReport(userID, reportType, reason string, photo *mu
 	now := currentStudentTime()
 	if normalizedType == "HADIR" && now.Before(studentMoment(now, rule.CheckInStart)) {
 		return nil, ErrAttendanceNotOpen
+	}
+	if normalizedType == "HADIR" && now.After(studentMoment(now, rule.LateUntil)) {
+		return nil, ErrAttendanceWindowClosed
 	}
 
 	existing, err := s.findAttendanceRecord(row.StudentID, now)

@@ -13,6 +13,7 @@ import (
 	leaveModule "absensi-cn-api/internal/modules/leave"
 	"absensi-cn-api/pkg/storage"
 
+	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -34,6 +35,8 @@ var (
 	ErrPhotoInvalid           = errors.New("attendance photo must be jpg, jpeg, png, or webp")
 	ErrReportTypeInvalid      = errors.New("report type must be HADIR, IZIN, or SAKIT")
 	ErrReasonRequired         = errors.New("reason is required for izin or sakit")
+
+	errStudentAttendanceDuplicate = errors.New("concurrent duplicate attendance insert")
 )
 
 type Service struct {
@@ -299,6 +302,10 @@ func (s *Service) SubmitDailyReport(userID, reportType, reason string, photo *mu
 				Notes:                    optionalString(buildAttendanceNote(normalizedType, trimmedReason)),
 			}
 			if err := tx.Create(&record).Error; err != nil {
+				var mysqlErr *mysql.MySQLError
+				if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
+					return errStudentAttendanceDuplicate
+				}
 				return fmt.Errorf("create student attendance report: %w", err)
 			}
 		}
@@ -319,6 +326,9 @@ func (s *Service) SubmitDailyReport(userID, reportType, reason string, photo *mu
 
 		return nil
 	})
+	if errors.Is(err, errStudentAttendanceDuplicate) {
+		return s.GetToday(userID)
+	}
 	if err != nil {
 		return nil, err
 	}

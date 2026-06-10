@@ -41,10 +41,10 @@ func New() (*App, error) {
 	server := &http.Server{
 		Addr:              fmt.Sprintf(":%s", cfg.Port),
 		Handler:           engine,
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      15 * time.Second,
-		IdleTimeout:       60 * time.Second,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       120 * time.Second,
+		WriteTimeout:      120 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	return &App{

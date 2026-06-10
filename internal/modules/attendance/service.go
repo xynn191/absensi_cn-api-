@@ -11,9 +11,10 @@ import (
 
 	"absensi-cn-api/pkg/storage"
 
-"github.com/google/uuid"
-"gorm.io/gorm"
-"gorm.io/gorm/clause"
+	"github.com/go-sql-driver/mysql"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -281,7 +282,7 @@ func (s *Service) CheckIn(userID string, photo *multipart.FileHeader, notes stri
 		return nil, err
 	}
 	if existingRecord != nil && existingRecord.PhotoURL != nil && existingRecord.CheckInAt != nil {
-		return nil, ErrAttendanceAlreadyRecorded
+		return s.mapAttendanceRecord(*existingRecord)
 	}
 
 	photoURL, photoFilename, err := s.storeAttendancePhoto(photo, now)
@@ -327,12 +328,22 @@ func (s *Service) CheckIn(userID string, photo *multipart.FileHeader, notes stri
 			Notes:                    optionalString(trimmedNotes),
 		}
 		if err := tx.Create(&record).Error; err != nil {
+			var mysqlErr *mysql.MySQLError
+			if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
+				return ErrAttendanceAlreadyRecorded
+			}
 			return fmt.Errorf("create attendance record: %w", err)
 		}
 		savedRecord = record
 		return nil
 	})
 	if err != nil {
+		if errors.Is(err, ErrAttendanceAlreadyRecorded) {
+			existing, _ := s.findAttendanceRecordByStudentAndDate(contextRow.StudentID, now)
+			if existing != nil {
+				return s.mapAttendanceRecord(*existing)
+			}
+		}
 		return nil, err
 	}
 
@@ -555,14 +566,6 @@ func (s *Service) ensureAlphaRecordsForDate(date time.Time) error {
 			}
 		}
 
-		existing, err := s.findAttendanceRecordByStudentAndDate(membership.StudentID, date)
-		if err != nil {
-			return err
-		}
-		if existing != nil {
-			continue
-		}
-
 		record := AttendanceRecord{
 			ID:                       uuid.NewString(),
 			StudentID:                membership.StudentID,
@@ -572,15 +575,13 @@ func (s *Service) ensureAlphaRecordsForDate(date time.Time) error {
 			AttendanceDate:           targetDate,
 			Status:                   StatusAlfa,
 		}
-if err := s.db.Clauses(clause.OnConflict{
-	Columns: []clause.Column{
-		{Name: "student_id"},
-		{Name: "attendance_date"},
-	},
-	DoNothing: true,
-}).Create(&record).Error; err != nil {
-	return fmt.Errorf("create alpha attendance record: %w", err)
-}
+		if err := s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&record).Error; err != nil {
+			var mysqlErr *mysql.MySQLError
+			if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
+				continue
+			}
+			return fmt.Errorf("create alpha attendance record: %w", err)
+		}
 	}
 
 	return nil
@@ -590,7 +591,9 @@ func (s *Service) storeAttendancePhoto(photo *multipart.FileHeader, submittedAt 
 	if s.photoUploader == nil {
 		return "", "", fmt.Errorf("photo uploader is not configured")
 	}
-	photoURL, fileName, err := s.photoUploader.Store(context.Background(), photo, "attendance", submittedAt)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	photoURL, fileName, err := s.photoUploader.Store(ctx, photo, "attendance", submittedAt)
 	if err != nil {
 		return "", "", fmt.Errorf("store attendance photo: %w", err)
 	}

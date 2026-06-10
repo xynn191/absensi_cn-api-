@@ -1419,7 +1419,7 @@ func normalizeMySQLDSN(rawDSN, defaultParams string) string {
 		params.Set("parseTime", "True")
 	}
 	if _, exists := params["loc"]; !exists {
-		params.Set("loc", "Local")
+		params.Set("loc", "Asia%2FJakarta")
 	}
 
 	return fmt.Sprintf("%s:%s@tcp(%s)/%s?%s", username, password, host, databaseName, params.Encode())

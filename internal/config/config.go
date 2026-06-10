@@ -76,7 +76,7 @@ func Load() (*Config, error) {
 			Name:     getEnv("DB_NAME", "absensi_cn"),
 			User:     getEnv("DB_USER", "root"),
 			Password: getEnv("DB_PASSWORD", ""),
-			Params:   getEnv("DB_PARAMS", "charset=utf8mb4&parseTime=True&loc=Local"),
+			Params:   getEnv("DB_PARAMS", "charset=utf8mb4&parseTime=True&loc=Asia%2FJakarta"),
 		},
 		JWT: JWTConfig{
 			Secret:         getEnv("JWT_SECRET", "development-secret"),

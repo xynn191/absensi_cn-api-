@@ -25,16 +25,16 @@ var (
 )
 
 type teacherProfileRow struct {
-	ID       string
-	UserID   string
-	Name     string
-	Username *string
-	NIP      *string
-	NUPTK    *string
-	Gender   *string
-	Phone    *string
-	Address  *string
-	IsActive bool
+	ID       string  `gorm:"column:id"`
+	UserID   string  `gorm:"column:user_id"`
+	Name     string  `gorm:"column:name"`
+	Username *string `gorm:"column:username"`
+	NIP      *string `gorm:"column:nip"`
+	NUPTK    *string `gorm:"column:nuptk"`
+	Gender   *string `gorm:"column:gender"`
+	Phone    *string `gorm:"column:phone"`
+	Address  *string `gorm:"column:address"`
+	IsActive bool    `gorm:"column:is_active"`
 }
 
 type subjectRow struct {

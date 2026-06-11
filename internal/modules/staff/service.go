@@ -272,7 +272,7 @@ func (s *Service) GetHomeroomDashboard(userID string) (*HomeroomDashboardRespons
 }
 
 func (s *Service) ListHomeroomAttendance(userID, date, status string) ([]attendance.AttendanceRecordResponse, error) {
-	if s.db == nil {
+	if s.db == nil { 
 		return nil, ErrStaffDataUnavailable
 	}
 

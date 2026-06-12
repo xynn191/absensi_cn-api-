@@ -4,6 +4,14 @@ Backend REST API untuk `Absensi CN`, sistem absensi sekolah `SMK Citra Negara`.
 
 Project ini dibangun menggunakan `Golang` dengan arsitektur modular yang tetap sederhana, realistis, dan mudah dikembangkan untuk kebutuhan tugas sekolah maupun portfolio.
 
+## Kepemilikan dan Kredit
+
+Website absensi ini dibuat oleh `Randhu Paksi Membumi`.
+
+Copyright 2026 `Randhu Paksi Membumi`. All rights reserved.
+
+Project ini dibuat untuk kebutuhan ujian praktik SMK dan portfolio. Penggunaan untuk operasional sekolah, distribusi ulang, rebranding, penghapusan atribusi pembuat, atau pengembangan turunan membutuhkan izin tertulis dari `Randhu Paksi Membumi`.
+
 ## Tentang Project
 
 `Absensi CN API` menangani proses inti sistem:

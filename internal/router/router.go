@@ -192,6 +192,10 @@ func New(cfg *config.Config, db *gorm.DB) (*gin.Engine, error) {
 			adminGroup.POST("/users", adminHandler.CreateUser)
 			adminGroup.PATCH("/users/:id", adminHandler.UpdateUser)
 			adminGroup.DELETE("/users/:id", adminHandler.DeleteUser)
+			adminGroup.GET("/import/template/guru", adminHandler.DownloadTeacherTemplate)
+			adminGroup.GET("/import/template/siswa", adminHandler.DownloadStudentTemplate)
+			adminGroup.POST("/import/guru", adminHandler.ImportTeachers)
+			adminGroup.POST("/import/siswa", adminHandler.ImportStudents)
 		}
 	}
 

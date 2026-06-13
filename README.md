@@ -6,11 +6,21 @@ Project ini dibangun menggunakan `Golang` dengan arsitektur modular yang tetap s
 
 ## Kepemilikan dan Kredit
 
-Website absensi ini dibuat oleh `Randhu Paksi Membumi`.
+Project ini dibuat oleh `RBAR Team` dan dipimpin oleh `Randhu Paksi Membumi`.
 
-Copyright 2026 `Randhu Paksi Membumi`. All rights reserved.
+Copyright 2026 `RBAR Team`. All rights reserved.
 
-Project ini dibuat untuk kebutuhan ujian praktik SMK dan portfolio. Penggunaan untuk operasional sekolah, distribusi ulang, rebranding, penghapusan atribusi pembuat, atau pengembangan turunan membutuhkan izin tertulis dari `Randhu Paksi Membumi`.
+Lead creator:
+
+- `Randhu Paksi Membumi` - Creator, Lead Fullstack Developer, System Analyst, UI/UX Designer, Frontend Engineer, Backend Engineer
+
+Project roles:
+
+- `Ilham Rae Utomo` - Backend Developer, Hosting & Deployment Engineer
+- `Abiansyah Putra` - Backend Developer, Hosting & Deployment Engineer
+- `Fabian Nanday Ghanian` - UI/UX Designer
+
+Project ini dibuat untuk kebutuhan ujian praktik SMK dan portfolio. Penggunaan untuk operasional sekolah, distribusi ulang, rebranding, penghapusan atribusi pembuat, atau pengembangan turunan membutuhkan izin tertulis dari `RBAR Team`.
 
 ## Tentang Project
 

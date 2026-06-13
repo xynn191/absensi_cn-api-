@@ -22,7 +22,10 @@ func (h *Handler) Check(c *gin.Context) {
 	response.Success(c, http.StatusOK, "api is healthy", gin.H{
 		"database_enabled": h.db != nil,
 		"project":          meta.Project,
-		"creator":          meta.Creator,
+		"team":             meta.Team,
+		"creator":          meta.LeadCreatorCredit(),
+		"creator_roles":    meta.LeadCreatorFullRole,
+		"contributors":     meta.Contributors,
 		"copyright":        meta.Copyright,
 	})
 }

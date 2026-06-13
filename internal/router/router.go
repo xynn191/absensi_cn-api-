@@ -2,6 +2,7 @@ package router
 
 import (
 	"absensi-cn-api/internal/config"
+	"absensi-cn-api/internal/meta"
 	"absensi-cn-api/internal/middleware"
 	"absensi-cn-api/internal/modules/admin"
 	"absensi-cn-api/internal/modules/attendance"
@@ -11,9 +12,11 @@ import (
 	"absensi-cn-api/internal/modules/staff"
 	studentPortal "absensi-cn-api/internal/modules/student"
 	"absensi-cn-api/internal/modules/user"
+	"absensi-cn-api/pkg/response"
 	"absensi-cn-api/pkg/storage"
 	"absensi-cn-api/pkg/token"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -30,12 +33,18 @@ func New(cfg *config.Config, db *gorm.DB) (*gin.Engine, error) {
 	engine.Use(gin.Logger())
 	engine.Use(gin.Recovery())
 	engine.Use(middleware.RequestID())
+	engine.Use(func(c *gin.Context) {
+		c.Header("X-Project-Team", meta.Team)
+		c.Header("X-Project-Creator", meta.LeadCreatorCredit())
+		c.Header("X-Project-Copyright", meta.Copyright)
+		c.Next()
+	})
 	engine.Use(cors.New(cors.Config{
 		AllowOrigins:     cfg.AllowedOrigins,
 		AllowWildcard:    hasWildcardOrigin(cfg.AllowedOrigins),
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Request-ID"},
-		ExposeHeaders:    []string{"X-Request-ID"},
+		ExposeHeaders:    []string{"X-Request-ID", "X-Project-Team", "X-Project-Creator", "X-Project-Copyright"},
 		AllowCredentials: true,
 	}))
 	engine.Static("/uploads", "./storage/uploads")
@@ -68,6 +77,18 @@ func New(cfg *config.Config, db *gorm.DB) (*gin.Engine, error) {
 	api := engine.Group(cfg.APIPrefix)
 	{
 		api.GET("/health", healthHandler.Check)
+		api.GET("/meta", func(c *gin.Context) {
+			response.Success(c, http.StatusOK, "project metadata", gin.H{
+				"project":            meta.Project,
+				"team":               meta.Team,
+				"creator":            meta.LeadCreator,
+				"creator_credit":     meta.LeadCreatorCredit(),
+				"creator_full_roles": meta.LeadCreatorFullRole,
+				"contributors":       meta.Contributors,
+				"copyright":          meta.Copyright,
+				"statement":          meta.Statement,
+			})
+		})
 		api.GET("/public/attendance-window", publicHandler.AttendanceWindow)
 		api.POST("/auth/login", authHandler.Login)
 
